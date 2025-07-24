@@ -2,16 +2,15 @@
 """
 Script to manage CTFd challenge phases.
 This integrates with your start_phase.sh script to control challenge visibility in CTFd.
+
+Usage:
+    python3 manage_ctf_phases.py --url http://your-ctfd-url --username admin --password admin --phase 2
 """
 
 import requests
 import json
 import sys
-
-# Configuration
-CTFD_URL = "http://your-ctfd-url"  # Update this to your CTFd instance URL
-ADMIN_USERNAME = "admin"  # Update with your admin username
-ADMIN_PASSWORD = "admin"  # Update with your admin password
+import click
 
 # Phase definitions - which challenges are available in each phase
 PHASE_CHALLENGES = {
@@ -101,27 +100,21 @@ class CTFdPhaseManager:
         
         print(f"Visible challenges: {', '.join(visible_challenges)}")
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 manage_ctf_phases.py <phase_number>")
-        print("Example: python3 manage_ctf_phases.py 2")
-        sys.exit(1)
+@click.command()
+@click.option('--url', required=True, help='CTFd instance URL (e.g., http://localhost:8000)')
+@click.option('--username', required=True, help='CTFd admin username')
+@click.option('--password', required=True, help='CTFd admin password')
+@click.option('--phase', required=True, type=click.IntRange(1, 4), help='Phase number to activate (1-4)')
+def main(url, username, password, phase):
+    """Manage CTFd challenge phases by controlling challenge visibility.
+    
+    Examples:
+        # Activate phase 2 (shows challenges from phases 1 and 2)
+        python3 manage_ctf_phases.py --url http://localhost:8000 --username admin --password admin --phase 2
+    """
     
     try:
-        phase = int(sys.argv[1])
-        if phase < 1 or phase > 4:
-            print("Phase must be between 1 and 4")
-            sys.exit(1)
-    except ValueError:
-        print("Phase must be a number")
-        sys.exit(1)
-    
-    if not CTFD_URL or CTFD_URL == "http://your-ctfd-url":
-        print("Please update CTFD_URL in the script with your actual CTFd instance URL")
-        sys.exit(1)
-    
-    try:
-        manager = CTFdPhaseManager(CTFD_URL, ADMIN_USERNAME, ADMIN_PASSWORD)
+        manager = CTFdPhaseManager(url, username, password)
         manager.activate_phase(phase)
     except Exception as e:
         print(f"Error: {e}")
