@@ -16,3 +16,10 @@ spec:
         image: busybox
         command: ["/bin/sh","-c"]
         args: ["while true; do echo '{{ .Values.flags.warmup }}'; sleep 30; done"]
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"

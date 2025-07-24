@@ -20,4 +20,4 @@ roleRef:
   name: player-role
 subjects:
 - kind: User
-  name: "arn:aws:iam::{{ .Values.awsAccount | default \"111122223333\" }}:role/ctf-{{ .Values.playerName }}"
+  name: {{ printf "arn:aws:iam::%s:role/ctf-%s" (.Values.awsAccount | default "111122223333") .Values.playerName | quote }}

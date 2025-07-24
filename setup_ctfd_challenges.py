@@ -177,16 +177,27 @@ class CTFdAPI:
         if login_page.status_code != 200:
             raise Exception(f"Failed to access login page: {login_page.status_code}")
 
-        # Extract nonce from login page (simplified - you might need to parse HTML)
-        # For now, we'll try without nonce and see if it works
+        # Extract CSRF token from login page
+        import re
+        csrf_match = re.search(r"'csrfNonce':\s*[\"']([^\"']+)[\"']", login_page.text)
+        if not csrf_match:
+            raise Exception("Could not find CSRF token in login page")
+        
+        csrf_token = csrf_match.group(1)
 
         login_data = {
             'name': username,
-            'password': password
+            'password': password,
+            'nonce': csrf_token
         }
 
         resp = self.session.post(f"{self.base_url}/login", data=login_data)
+        print(f"Login response status: {resp.status_code}")
+        print(f"Login response URL: {resp.url}")
+        print(f"Login response headers: {dict(resp.headers)}")
+        
         if resp.status_code != 200 or 'login' in resp.url:
+            print(f"Login response text: {resp.text[:500]}")
             raise Exception("Login failed")
 
         print("Successfully logged in to CTFd")
