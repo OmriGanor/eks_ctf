@@ -1,0 +1,11 @@
+apiVersion: v2
+name: game
+description: once per cluster
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+  - name: ctfd
+    repository: oci://ghcr.io/bman46/ctfd
+    version: "*"

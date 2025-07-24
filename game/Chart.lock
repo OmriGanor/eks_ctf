@@ -1,0 +1,6 @@
+dependencies:
+- name: ctfd
+  repository: oci://ghcr.io/bman46/ctfd
+  version: 0.6.3
+digest: sha256:6aaf5a25b345ca8a885ae9d3ead9c2ed3d950613f3d40f04a643f14367c22f13
+generated: "2025-07-24T11:04:42.863993463+03:00"

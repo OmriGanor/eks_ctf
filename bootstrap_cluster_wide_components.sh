@@ -11,6 +11,7 @@ export REGION=eu-west-1
 # # 1.3  Deploy Silly‑CSI DaemonSet (harmless until a team requests its StorageClass)
 # kubectl apply -f challenges/phase2/silly-csi-driver.yaml
 
-# 1.4  Stand up CTFd in namespace ctfd-infra
-helm -n ctfd install --create-namespace platformctf oci://ghcr.io/bman46/ctfd/ctfd
+# 1.4  Deploy the game chart (includes CTFd as subchart) in namespace ctfd
+helm dependency update game/
+helm -n ctfd upgrade --install --create-namespace platformctf ./game
 
