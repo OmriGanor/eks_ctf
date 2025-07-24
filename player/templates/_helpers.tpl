@@ -1,3 +1,3 @@
 {{- define "player.ns" -}}
-{{ printf "team-%s" .Values.playerName | quote }}
+{{ .Values.playerName | quote }}
 {{- end -}}

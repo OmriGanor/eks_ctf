@@ -29,7 +29,7 @@ ERRORS=0
 
 echo "Starting cleanup..."
 
-# 1. Delete Helm deployment and namespace
+# 1. Delete Helm deployment
 echo "🔄 Deleting Helm deployment..."
 if helm uninstall $TEAM --namespace $TEAM 2>/dev/null; then
     echo "✅ Helm deployment deleted"

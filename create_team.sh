@@ -17,7 +17,12 @@ TEAM=$1
 echo "Creating CTF environment for team: $TEAM"
 
 # Deploy the team's Kubernetes namespace and challenges
-helm upgrade --install $TEAM ./player --set playerName=$TEAM --create-namespace
+echo "Installing player chart for team: $TEAM (namespace: $TEAM)"
+helm upgrade --install $TEAM ./player \
+  --set playerName=$TEAM \
+  --namespace $TEAM \
+  --create-namespace
+
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 # 2.1  IAM role that the API server trusts
@@ -82,5 +87,5 @@ echo "🔑 AWS Access Keys:"
 echo "$CREDS"
 echo ""
 echo "export AWS_ACCESS_KEY_ID=<from_admin> export AWS_SECRET_ACCESS_KEY=<from_admin> export AWS_DEFAULT_REGION=eu-west-1"
-echo "kubectl --kubeconfig kubeconfig_team-a get pods"
+echo "kubectl --kubeconfig kubeconfig_${TEAM} get pods"
 echo "Send ${TEAM}_bundle.zip plus the AWS keys above securely to the team."
