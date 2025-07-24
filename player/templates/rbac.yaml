@@ -5,11 +5,16 @@ metadata:
   namespace: {{ include "player.ns" . }}
 rules:
 - apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list"]
+  resources: ["pods", "pods/log", "pods/exec"]
+  verbs: ["get", "list", "create"]
 - apiGroups: [""]
   resources: ["secrets"]
-  verbs: ["watch", "list"]
+  verbs: ["list"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames:
+    - leaky
+  verbs: ["watch"]
 
 ---
 kind: RoleBinding

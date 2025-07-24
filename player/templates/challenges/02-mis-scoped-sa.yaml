@@ -1,0 +1,79 @@
+{{- $ns := include "player.ns" . -}}
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-pwn
+  namespace: {{ $ns }}
+
+---
+# --- Role granting read-only access to all ConfigMaps/Secrets -----
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: sa-pwn-role
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - flag-mis-sa
+    verbs: ["get", "list"]
+
+---
+# --- Bind the Role to the ServiceAccount --------------------------
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: sa-pwn-bind
+  namespace: {{ $ns }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sa-pwn-role
+subjects:
+  - kind: ServiceAccount
+    name: sa-pwn
+    namespace: {{ $ns }}
+
+---
+# --- Hidden ConfigMap that stores the flag ------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flag-mis-sa
+  namespace: {{ $ns }}
+  labels:
+    ctf-challenge: "mis-sa"
+data:
+  flag: {{ .Values.flags.misScopedSA }}
+
+---
+# --- "Victim" pod that runs with the mis-scoped SA ----------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sa-pwn
+  namespace: {{ $ns }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sa-pwn
+  template:
+    metadata:
+      labels:
+        app: sa-pwn
+    spec:
+      serviceAccountName: sa-pwn
+      containers:
+        - name: pwnbox
+          image: radial/busyboxplus:curl
+          command: ["/bin/sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
