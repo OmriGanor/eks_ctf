@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+  namespace: {{ include "player.ns" . }}
+spec:
+  hard:
+    pods: "{{ .Values.limits.objects }}"
+    configmaps: "{{ .Values.limits.objects }}"
+    secrets: "{{ .Values.limits.objects }}"
+    requests.cpu: "{{ .Values.limits.cpu }}"
+    requests.memory: "{{ .Values.limits.memory }}"
+    limits.cpu: "{{ .Values.limits.cpu }}"
+    limits.memory: "{{ .Values.limits.memory }}"

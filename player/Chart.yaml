@@ -1,0 +1,6 @@
+apiVersion: v2
+name: player
+description: Per‑team namespace + starter challenges for the K8s‑on‑EKS CTF
+type: application
+version: 0.1.0
+appVersion: "1.0"

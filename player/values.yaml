@@ -1,0 +1,14 @@
+playerName: changeme                # override with --set playerName=<team-x>
+limits:
+  cpu: "2"
+  memory: "4Gi"
+  objects: 1000
+flags:                              # staff inject unique strings per install
+  warmup:        "CTF{WELCOME}"
+  leakySecret:   "CTF{SECRET_READ}"
+  misScopedSA:   "CTF{TOKEN_STEAL}"
+  netpol101:     "CTF{ICMP_ALLOWED}"
+  sillyCSI:      "CTF{HOST_PATH}"
+  trivialJob:    "CTF{CONTROLLER_PWN}"
+  podEscape:     "CTF{KERNEL_SPACE}"
+  escalation:    "CTF{CLUSTER_ADMIN}"

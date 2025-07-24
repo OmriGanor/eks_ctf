@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: warmup
+  namespace: {{ include "player.ns" . }}
+spec:
+  selector:
+    matchLabels: { app: warmup }
+  replicas: 1
+  template:
+    metadata:
+      labels: { app: warmup }
+    spec:
+      containers:
+      - name: printer
+        image: busybox
+        command: ["/bin/sh","-c"]
+        args: ["while true; do echo '{{ .Values.flags.warmup }}'; sleep 30; done"]
