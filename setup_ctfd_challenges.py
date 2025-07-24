@@ -6,8 +6,8 @@ Run this after deploying CTFd to populate it with your challenges.
 Usage:
     python3 setup_ctfd_challenges.py --url http://your-ctfd-url --username admin --password admin
     
-For multi-team setup:
-    python3 setup_ctfd_challenges.py --url http://your-ctfd-url --username admin --password admin --team-flags team-a,team-b,team-c
+Flags are loaded from Helm deployments. All teams use the same flags:
+    python3 setup_ctfd_challenges.py --url http://your-ctfd-url --username admin --password admin
 """
 
 import requests
@@ -29,12 +29,6 @@ class Challenge(BaseModel):
     type: str = "standard"
     hints: List[str] = Field(default_factory=list)
     flag_key: str = Field(description="Key to look up flag values")
-
-
-class TeamFlags(BaseModel):
-    """Pydantic model for team flag collections"""
-    team_name: str
-    flags: Dict[str, str]
 
 
 # Challenge definitions based on your Kubernetes challenges
@@ -148,17 +142,7 @@ The ultimate flag awaits those who can take control of the entire cluster.""",
     )
 ]
 
-# Default flag values for fallback
-DEFAULT_FLAGS = {
-    "warmup": "CTF{WELCOME}",
-    "leakySecret": "CTF{SECRET_READ}",
-    "misScopedSA": "CTF{TOKEN_STEAL}",
-    "netpol101": "CTF{ICMP_ALLOWED}",
-    "sillyCSI": "CTF{HOST_PATH}",
-    "trivialJob": "CTF{CONTROLLER_PWN}",
-    "podEscape": "CTF{KERNEL_SPACE}",
-    "escalation": "CTF{CLUSTER_ADMIN}"
-}
+
 
 
 class CTFdAPI:
@@ -259,131 +243,66 @@ class CTFdAPI:
         return challenge_id
 
 
-def load_team_flags_from_helm(team_name: str) -> Dict[str, str]:
-    """Load flag values from a team's Helm deployment"""
-    try:
-        import subprocess
-        result = subprocess.run(['helm', 'get', 'values', team_name], 
-                              capture_output=True, text=True)
-        if result.returncode == 0:
-            values = yaml.safe_load(result.stdout)
-            flags = values.get('flags', {})
-            if flags:
-                print(f"Loaded flags for {team_name} from Helm deployment")
-                return flags
-    except Exception as e:
-        print(f"Warning: Failed to get Helm values for {team_name}: {e}")
-    return {}
-
-
-def load_team_flags_from_file(team_name: str) -> Dict[str, str]:
-    """Load flag values from a team-specific values file"""
-    team_values_file = f"player/values-{team_name}.yaml"
-    if os.path.exists(team_values_file):
-        print(f"Loading flags for {team_name} from {team_values_file}")
-        with open(team_values_file, 'r') as f:
-            values = yaml.safe_load(f)
-            return values.get('flags', {})
-    return {}
-
-
-def generate_default_team_flags(team_name: str) -> Dict[str, str]:
-    """Generate default flags with team suffix"""
-    print(f"Using default flags with team suffix for {team_name}")
-    return {
-        "warmup": f"CTF{{WELCOME_{team_name.upper()}}}",
-        "leakySecret": f"CTF{{SECRET_READ_{team_name.upper()}}}",
-        "misScopedSA": f"CTF{{TOKEN_STEAL_{team_name.upper()}}}",
-        "netpol101": f"CTF{{ICMP_ALLOWED_{team_name.upper()}}}",
-        "sillyCSI": f"CTF{{HOST_PATH_{team_name.upper()}}}",
-        "trivialJob": f"CTF{{CONTROLLER_PWN_{team_name.upper()}}}",
-        "podEscape": f"CTF{{KERNEL_SPACE_{team_name.upper()}}}",
-        "escalation": f"CTF{{CLUSTER_ADMIN_{team_name.upper()}}}"
-    }
-
-
-def load_single_team_flags(team_name: Optional[str] = None) -> Dict[str, str]:
-    """Load flag values from a single source (for single-team setups)"""
-    # First try player/values.yaml
-    values_file = "player/values.yaml"
-    if os.path.exists(values_file):
-        print(f"Loading flags from {values_file}")
-        with open(values_file, 'r') as f:
-            values = yaml.safe_load(f)
-            return values.get('flags', {})
+def load_flags_from_helm(team_name: str = None) -> Dict[str, str]:
+    """Load flag values from any team's Helm deployment (all teams now have identical flags)"""
+    # Try to find any deployed team if none specified
+    if not team_name:
+        try:
+            import subprocess
+            result = subprocess.run(['helm', 'list', '-q'], capture_output=True, text=True)
+            if result.returncode == 0:
+                releases = result.stdout.strip().split('\n')
+                # Look for team releases (exclude game/platform releases)
+                team_releases = [r for r in releases if r.startswith('team-') and r != '']
+                if team_releases:
+                    team_name = team_releases[0]
+                    print(f"Auto-detected team deployment: {team_name}")
+        except Exception:
+            pass
     
-    # If team name provided, try to get from Helm
     if team_name:
-        flags = load_team_flags_from_helm(team_name)
-        if flags:
-            return flags
+        try:
+            import subprocess
+            result = subprocess.run(['helm', 'get', 'values', team_name, '--all'], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                values = yaml.safe_load(result.stdout)
+                flags = values.get('flags', {})
+                if flags:
+                    print(f"Loaded flags from Helm deployment: {team_name}")
+                    return flags
+        except Exception as e:
+            print(f"Warning: Failed to get Helm values for {team_name}: {e}")
     
-    # Fallback to defaults
-    print("Using default flag values")
-    return DEFAULT_FLAGS
+    raise Exception("No Helm deployment found with flags. Please deploy at least one team first.")
 
 
-def load_multi_team_flags(team_names: List[str]) -> List[TeamFlags]:
-    """Load flag values for multiple teams"""
-    all_team_flags = []
-    
-    for team in team_names:
-        # Try different sources in order of preference
-        team_flags = (
-            load_team_flags_from_file(team) or
-            load_team_flags_from_helm(team) or
-            generate_default_team_flags(team)
-        )
-        
-        all_team_flags.append(TeamFlags(team_name=team, flags=team_flags))
-    
-    return all_team_flags
+def setup_challenges(ctfd: CTFdAPI, team_name: Optional[str] = None) -> None:
+    """Set up challenges using flags from Helm deployment"""
+    print("Setting up CTF challenges...")
+    flags = load_flags_from_helm(team_name)
 
-
-def setup_single_team_challenges(ctfd: CTFdAPI, team_name: Optional[str] = None) -> None:
-    """Set up challenges for single team configuration"""
-    print("Setting up challenges for single team")
-    flags = load_single_team_flags(team_name)
-    
     for challenge in CHALLENGES:
         flag_value = flags.get(challenge.flag_key, f"CTF{{{challenge.flag_key.upper()}}}")
         ctfd.create_challenge(challenge, [flag_value])
-
-
-def setup_multi_team_challenges(ctfd: CTFdAPI, team_names: List[str]) -> None:
-    """Set up challenges for multi-team configuration"""
-    print(f"Setting up challenges for teams: {', '.join(team_names)}")
-    
-    all_team_flags = load_multi_team_flags(team_names)
-    
-    for challenge in CHALLENGES:
-        # Collect all flag values for this challenge across teams
-        flag_values = [
-            team_flags.flags.get(challenge.flag_key, f"CTF{{{challenge.flag_key.upper()}_{team_flags.team_name.upper()}}}")
-            for team_flags in all_team_flags
-        ]
-        
-        ctfd.create_challenge(challenge, flag_values)
 
 
 @click.command()
 @click.option('--url', required=True, help='CTFd instance URL (e.g., http://localhost:8000)')
 @click.option('--username', required=True, help='CTFd admin username')
 @click.option('--password', required=True, help='CTFd admin password')
-@click.option('--team-flags', help='Comma-separated list of team names for multi-team setup (e.g., team-a,team-b,team-c)')
-@click.option('--single-team', help='Single team name to load flags from (alternative to --team-flags)')
-def main(url: str, username: str, password: str, team_flags: Optional[str], single_team: Optional[str]):
+@click.option('--team', help='Specific team deployment to load flags from (optional - will auto-detect if not provided)')
+def main(url: str, username: str, password: str, team: Optional[str]):
     """Create CTFd challenges for the Kubernetes CTF.
     
+    Flags are always loaded from Helm deployments. All teams use the same flags.
+    
     Examples:
-        # Single team setup (uses player/values.yaml)
+        # Auto-detect team deployment and load flags
         python3 setup_ctfd_challenges.py --url http://localhost:8000 --username admin --password admin
         
-        # Single team with specific Helm deployment
-        python3 setup_ctfd_challenges.py --url http://localhost:8000 --username admin --password admin --single-team team-a
-        
-        # Multi-team setup (loads flags from each team's Helm deployment)
-        python3 setup_ctfd_challenges.py --url http://localhost:8000 --username admin --password admin --team-flags team-a,team-b,team-c
+        # Load flags from specific team deployment
+        python3 setup_ctfd_challenges.py --url http://localhost:8000 --username admin --password admin --team team-alpha
     """
     
     # Initialize CTFd API client
@@ -393,18 +312,17 @@ def main(url: str, username: str, password: str, team_flags: Optional[str], sing
         print(f"Failed to connect to CTFd: {e}")
         sys.exit(1)
 
-    # Setup challenges based on configuration
-    if team_flags:
-        team_list = [team.strip() for team in team_flags.split(',')]
-        setup_multi_team_challenges(ctfd, team_list)
-        
-        print(f"\nNote: Each challenge accepts flags from all {len(team_list)} teams.")
-        print("Teams cannot share flags as each team has unique flag values.")
-    else:
-        setup_single_team_challenges(ctfd, single_team)
-
-    print("\nAll challenges created successfully!")
-    print(f"Visit {url} to see your challenges")
+    # Setup challenges
+    try:
+        setup_challenges(ctfd, team)
+        print("\nAll challenges created successfully!")
+        print(f"Visit {url} to see your challenges")
+        print("\nNote: All teams use the same flags and compete for the same challenges.")
+    except Exception as e:
+        print(f"Failed to setup challenges: {e}")
+        print("\nMake sure you have deployed at least one team using:")
+        print("helm upgrade --install team-NAME ./player --set playerName=team-NAME --create-namespace")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
 TEAM=team-a                       # <‑‑ loop this block for every team
+
+# Deploy the team's Kubernetes namespace and challenges
+helm upgrade --install $TEAM ./player --set playerName=$TEAM --create-namespace
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 # 2.1  IAM role that the API server trusts

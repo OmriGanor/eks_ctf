@@ -3,12 +3,12 @@ limits:
   cpu: "2"
   memory: "4Gi"
   objects: 1000
-flags:                              # staff inject unique strings per install
-  warmup:        "CTF{WELCOME}"
-  leakySecret:   "CTF{SECRET_READ}"
-  misScopedSA:   "CTF{TOKEN_STEAL}"
-  netpol101:     "CTF{ICMP_ALLOWED}"
-  sillyCSI:      "CTF{HOST_PATH}"
-  trivialJob:    "CTF{CONTROLLER_PWN}"
-  podEscape:     "CTF{KERNEL_SPACE}"
-  escalation:    "CTF{CLUSTER_ADMIN}"
+flags:                              # single flags that all teams compete for
+  warmup:        "CTF{WELCOME_TO_K8S_CTF}"
+  leakySecret:   "CTF{SECRET_WATCH_PERMISSIONS}"
+  misScopedSA:   "CTF{SERVICE_ACCOUNT_COMPROMISE}"
+  netpol101:     "CTF{ICMP_TRAFFIC_ALLOWED}"
+  sillyCSI:      "CTF{HOST_FILESYSTEM_ACCESS}"
+  trivialJob:    "CTF{CUSTOM_CONTROLLER_PWN}"
+  podEscape:     "CTF{CONTAINER_ESCAPE_SUCCESS}"
+  escalation:    "CTF{CLUSTER_ADMIN_ACHIEVED}"
