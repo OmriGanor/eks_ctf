@@ -19,5 +19,5 @@ roleRef:
   kind: Role
   name: player-role
 subjects:
-- kind: User
-  name: {{ printf "arn:aws:iam::%s:role/ctf-%s" (.Values.awsAccount | default "111122223333") .Values.playerName | quote }}
+- kind: Group
+  name: ctf-players
