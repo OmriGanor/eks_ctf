@@ -1,0 +1,90 @@
+{{- $ns := include "player.ns" . -}}
+
+# --- Privileged Pod for Container Escape Challenge ---------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: privileged-victim
+  namespace: {{ $ns }}
+  labels:
+    ctf-challenge: "privileged-escape"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: privileged-victim
+  template:
+    metadata:
+      labels:
+        app: privileged-victim
+      annotations:
+        hint: "This container seems to have too many privileges. Can you escape to the 'host'?"
+    spec:
+      # Init container to set up the simulated host filesystem
+      initContainers:
+      - name: setup-host-fs
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          # Create realistic host directory structure
+          mkdir -p /host-sim/var/lib/kubelet/secrets
+          mkdir -p /host-sim/etc/kubernetes
+          mkdir -p /host-sim/proc/1
+          mkdir -p /host-sim/root/.ssh
+          mkdir -p /host-sim/tmp
+          
+          # Place some decoy files
+          echo "Not the flag" > /host-sim/var/lib/kubelet/config.yaml
+          echo "Still not the flag" > /host-sim/etc/kubernetes/admin.conf
+          echo "Nope, try again" > /host-sim/root/.ssh/authorized_keys
+          
+          # Hide the real flag in a less obvious location
+          echo "{{ .Values.flags.privilegedEscape }}" > /host-sim/var/lib/kubelet/secrets/.hidden_flag
+          
+          # Create some realistic proc entries
+          echo "1" > /host-sim/proc/1/stat
+          echo "init" > /host-sim/proc/1/comm
+          
+          # Set permissions to make it more realistic
+          chmod 600 /host-sim/root/.ssh/authorized_keys
+          chmod 644 /host-sim/var/lib/kubelet/secrets/.hidden_flag
+        volumeMounts:
+        - name: host-simulation
+          mountPath: /host-sim
+        securityContext:
+          runAsUser: 0
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+      
+      containers:
+      - name: victim-container
+        image: busybox
+        command: ["/bin/sh", "-c"]
+        args: ["sleep 3600"]
+        # Privileged container - the vulnerability
+        securityContext:
+          privileged: true
+          runAsUser: 0
+          allowPrivilegeEscalation: true
+        volumeMounts:
+        # Mount the simulated host filesystem at /host (common breakout location)
+        - name: host-simulation
+          mountPath: /host
+          readOnly: true
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+      
+      volumes:
+      - name: host-simulation
+        emptyDir: {}
