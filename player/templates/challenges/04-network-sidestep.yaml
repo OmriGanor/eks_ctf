@@ -1,0 +1,249 @@
+{{- $ns := include "player.ns" . -}}
+
+
+# --- Target service containing the flag (in isolated network) -----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flag-service
+  namespace: {{ $ns }}
+  labels:
+    app: flag-service
+    network: isolated
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flag-service
+  template:
+    metadata:
+      labels:
+        app: flag-service
+        network: isolated
+    spec:
+      containers:
+        - name: flag-server
+          image: gcr.io/distroless/python3-debian11:nonroot
+          ports:
+            - containerPort: 8080
+          command: ["python3", "-c"]
+          args:
+            - |
+              import http.server
+              import socketserver
+              import os
+              class FlagHandler(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      self.send_response(200)
+                      self.send_header('Content-type', 'text/html')
+                      self.end_headers()
+                      flag = os.environ.get('FLAG', 'CTF{FLAG_NOT_SET}')
+                      html = f'<html><body><h1>Congratulations!</h1><p>Flag: {flag}</p></body></html>'
+                      self.wfile.write(html.encode())
+              PORT = 8080
+              with socketserver.TCPServer(("", PORT), FlagHandler) as httpd:
+                  print(f"Server running on port {PORT}")
+                  httpd.serve_forever()
+          env:
+            - name: FLAG
+              value: {{ .Values.flags.networkSidestep }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flag-service
+  namespace: {{ $ns }}
+  labels:
+    network: isolated
+spec:
+  selector:
+    app: flag-service
+  ports:
+    - port: 80
+      targetPort: 8080
+
+---
+# --- Bridge pod that can access both networks ---------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bridge-proxy
+  namespace: {{ $ns }}
+  labels:
+    app: bridge-proxy
+    network: bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bridge-proxy
+  template:
+    metadata:
+      labels:
+        app: bridge-proxy
+        network: bridge
+    spec:
+      containers:
+        - name: proxy
+          image: alpine/socat:latest
+          command: ["socat"]
+          args: 
+            - "TCP-LISTEN:31337,fork,reuseaddr"
+            - "TCP-CONNECT:flag-service:80"
+          ports:
+            - containerPort: 31337
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bridge-proxy
+  namespace: {{ $ns }}
+  labels:
+    network: bridge
+spec:
+  selector:
+    app: bridge-proxy
+  ports:
+    - port: 31337
+      targetPort: 31337
+
+---
+# --- Player access pod (in default network) -----------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: player-box
+  namespace: {{ $ns }}
+  labels:
+    app: player-box
+    network: default
+  annotations:
+    hint: "Network policies block direct access to some services. Try scanning for non-standard ports to find a way around them."
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: player-box
+  template:
+    metadata:
+      labels:
+        app: player-box
+        network: default
+    spec:
+      containers:
+        - name: shell
+          image: radial/busyboxplus:curl
+          command: ["/bin/sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+---
+# --- Network Policy: Block default -> isolated communication ------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-flag-service
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchLabels:
+      network: isolated
+  policyTypes:
+  - Ingress
+  ingress:
+  # Only allow bridge network to access isolated network
+  - from:
+    - podSelector:
+        matchLabels:
+          network: bridge
+    ports:
+    - protocol: TCP
+      port: 80
+
+---
+# --- Network Policy: Allow default -> bridge communication --------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-bridge-access
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchLabels:
+      network: bridge
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow default network to access bridge
+  - from:
+    - podSelector:
+        matchLabels:
+          network: default
+    ports:
+    - protocol: TCP
+      port: 31337
+  # Allow bridge to access everything (no egress restrictions)
+
+---
+# --- Network Policy: Block default -> isolated (explicit) ---------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-default-isolated
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchLabels:
+      network: default
+  policyTypes:
+  - Egress
+  egress:
+  # Allow DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow access to bridge network
+  - to:
+    - podSelector:
+        matchLabels:
+          network: bridge
+  # Block direct access to isolated network (implicit - no rule for it) 

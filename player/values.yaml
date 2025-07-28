@@ -7,6 +7,7 @@ flags:                              # single flags that all teams compete for
   warmup:        "CTF{WELCOME_TO_K8S_CTF}"
   leakySecret:   "CTF{SECRET_WATCH_PERMISSIONS}"
   misScopedSA:   "CTF{SERVICE_ACCOUNT_COMPROMISE}"
+  networkSidestep: "CTF{BRIDGE_NETWORK_COMPROMISE}"
   privilegedEscape: "CTF{PRIVILEGED_CONTAINER_BREAKOUT}"
   netpol101:     "CTF{ICMP_TRAFFIC_ALLOWED}"
   sillyCSI:      "CTF{HOST_FILESYSTEM_ACCESS}"
