@@ -18,3 +18,10 @@ ctfd:
    hosts:
      - host: ctf.platformctf.eu.dev.dream-security.io
        path: "/"
+
+# Player namespace where challenge resources will be deployed
+playerNamespace: "default"
+
+# Challenge flags
+flags:
+  networkSidestep: "CTF{BRIDGE_NETWORK_COMPROMISE}"

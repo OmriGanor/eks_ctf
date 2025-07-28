@@ -4,13 +4,14 @@
 #
 # OBJECTIVE:
 # Navigate through network policies and service discovery to reach the secure
-# backend service and retrieve the flag.
+# backend service and retrieve the flag. The internal services are hidden from
+# direct inspection to maintain the discovery aspect of the challenge.
 #
 # SCENARIO:
 # You have access to a pod (o4-player-box) with a service account that has
 # limited permissions for service discovery. There are multiple services in 
 # the namespace, but network policies restrict direct access to the secure
-# backend containing the flag.
+# backend containing the flag. You can only see the frontend and your player box.
 #
 # HOW TO SOLVE:
 # 1. Start by accessing your player pod:
@@ -32,12 +33,12 @@
 #
 # 5. Test access to different services and understand the network flow:
 #    - o4-web-frontend: Entry point (accessible)
-#    - o4-internal-api: Middle tier (accessible from player)
+#    - o4-internal-api: Middle tier (discoverable via API)
 #    - o4-admin-proxy: Gateway requiring authentication
 #    - o4-secure-backend: Contains flag (blocked by network policy)
 #
 # 6. Use the discovered admin token to authenticate with the proxy:
-#    curl -H "X-Admin-Token: <token-from-configmap>" \
+#    curl -H "X-Admin-Token: o4-admin-proxy-secret-2024" \
 #         http://o4-admin-proxy/
 #
 # 7. The proxy will forward your request to the secure backend, bypassing
@@ -57,9 +58,9 @@
 # - Authentication is required at the proxy level, not network level
 #
 # SECURITY NOTE:
-# - The admin token is NOT visible in pod descriptions or container specs
-# - Players cannot use 'kubectl describe pod' to find the token
-# - The token must be discovered through proper service account API access
+# The internal services (API, proxy, backend) are deployed by the game
+# infrastructure to prevent players from inspecting them directly via
+# kubectl describe/get commands, maintaining the discovery challenge.
 #
 # =============================================================================
 
@@ -108,16 +109,6 @@ roleRef:
   kind: Role
   name: network-discovery-role
   apiGroup: rbac.authorization.k8s.io
-
----
-# --- ConfigMap with discovery hints and admin token ---------------
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: o4-network-challenge-config
-  namespace: {{ $ns }}
-data:
-  admin-token: "o4-admin-proxy-secret-2024"
 
 ---
 # --- Frontend Web Service (player entry point) -------------------
@@ -182,7 +173,6 @@ spec:
                           <p><em>{error_detail}</em></p>
                           <hr>
                           <p><small>This frontend service tries to connect to the o4-internal-api service but is being blocked.</small></p>
-                          <p><small>Check the logs for more details: <code>kubectl logs deployment/o4-web-frontend</code></small></p>
                       </body>
                       </html>
                       '''
@@ -226,322 +216,6 @@ spec:
       targetPort: 8080
 
 ---
-# --- Internal API Service (middle tier) ---------------------------
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: o4-internal-api
-  namespace: {{ $ns }}
-  labels:
-    app: o4-internal-api
-    network: api
-    tier: backend
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: o4-internal-api
-  template:
-    metadata:
-      labels:
-        app: o4-internal-api
-        network: api
-        tier: backend
-    spec:
-      containers:
-        - name: api
-          image: gcr.io/distroless/python3-debian11:nonroot
-          ports:
-            - containerPort: 8080
-          command: ["python3", "-c"]
-          args:
-            - |
-              import http.server
-              import socketserver
-              import urllib.request
-              import json
-              import os
-              
-              class APIHandler(http.server.BaseHTTPRequestHandler):
-                  def do_GET(self):
-                      # Check if request is from allowed frontend pods
-                      # This simulates the network policy check
-                      self.send_response(200)
-                      self.send_header('Content-type', 'application/json')
-                      self.end_headers()
-                      
-                      if self.path == '/status':
-                          response = {
-                              "status": "API is running",
-                              "message": "This API connects to secure services",
-                              "next_step": "Try accessing the o4-admin-proxy service with proper authentication"
-                          }
-                      elif self.path == '/admin':
-                          response = {
-                              "error": "Access denied", 
-                              "hint": "Admin access requires going through o4-admin-proxy service",
-                              "required": "X-Admin-Token header"
-                          }
-                      else:
-                          response = {
-                              "endpoints": ["/status", "/admin"],
-                              "note": "Direct access to secure backend is blocked by network policies"
-                          }
-                      
-                      self.wfile.write(json.dumps(response, indent=2).encode())
-              
-              PORT = 8080
-              with socketserver.TCPServer(("", PORT), APIHandler) as httpd:
-                  print("Internal API server starting on port 8080")
-                  print("This service has network restrictions...")
-                  httpd.serve_forever()
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            runAsUser: 65532
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-          resources:
-            requests:
-              cpu: "10m"
-              memory: "32Mi"
-            limits:
-              cpu: "100m"
-              memory: "64Mi"
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: o4-internal-api
-  namespace: {{ $ns }}
-  labels:
-    network: api
-    tier: backend
-spec:
-  selector:
-    app: o4-internal-api
-  ports:
-    - port: 80
-      targetPort: 8080
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: o4-admin-proxy
-  namespace: {{ $ns }}
-  labels:
-    app: o4-admin-proxy
-    network: proxy
-    tier: gateway
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: o4-admin-proxy
-  template:
-    metadata:
-      labels:
-        app: o4-admin-proxy
-        network: proxy
-        tier: gateway
-    spec:
-      containers:
-        - name: proxy
-          image: gcr.io/distroless/python3-debian11:nonroot
-          ports:
-            - containerPort: 8080
-          command: ["python3", "-c"]
-          args:
-            - |
-              import http.server
-              import socketserver
-              import urllib.request
-              import json
-              
-              class ProxyHandler(http.server.BaseHTTPRequestHandler):
-                  def do_GET(self):
-                      # Check for admin token
-                      auth_token = self.headers.get('X-Admin-Token')
-                      expected_token = os.environ.get('ADMIN_TOKEN', 'undefined')
-                      
-                      if not auth_token:
-                          self.send_response(401)
-                          self.send_header('Content-type', 'application/json')
-                          self.end_headers()
-                          response = {
-                              "error": "Missing authentication",
-                              "required": "X-Admin-Token header",
-                          }
-                          self.wfile.write(json.dumps(response, indent=2).encode())
-                          return
-                      
-                      if auth_token != expected_token:
-                          self.send_response(403)
-                          self.send_header('Content-type', 'application/json')
-                          self.end_headers()
-                          response = {
-                              "error": "Invalid token",
-                              "provided": auth_token
-                          }
-                          self.wfile.write(json.dumps(response, indent=2).encode())
-                          return
-                      
-                      # Valid token - proxy to secure backend
-                      try:
-                          with urllib.request.urlopen('http://o4-secure-backend:80' + self.path) as backend_response:
-                              content = backend_response.read()
-                              self.send_response(200)
-                              self.send_header('Content-type', 'text/html')
-                              self.end_headers()
-                              self.wfile.write(content)
-                      except Exception as e:
-                          self.send_response(500)
-                          self.send_header('Content-type', 'application/json')
-                          self.end_headers()
-                          response = {"error": f"Backend connection failed: {str(e)}"}
-                          self.wfile.write(json.dumps(response).encode())
-              
-              PORT = 8080
-              with socketserver.TCPServer(("", PORT), ProxyHandler) as httpd:
-                  print("Admin proxy server starting on port 8080")
-                  print("Requires X-Admin-Token header for authentication")
-                  httpd.serve_forever()
-          env:
-            - name: ADMIN_TOKEN
-              valueFrom:
-                configMapKeyRef:
-                  name: o4-network-challenge-config
-                  key: admin-token
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            runAsUser: 65532
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-          resources:
-            requests:
-              cpu: "10m"
-              memory: "32Mi"
-            limits:
-              cpu: "100m"
-              memory: "64Mi"
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: o4-admin-proxy
-  namespace: {{ $ns }}
-  labels:
-    network: proxy
-    tier: gateway
-spec:
-  selector:
-    app: o4-admin-proxy
-  ports:
-    - port: 80
-      targetPort: 8080
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: o4-secure-backend
-  namespace: {{ $ns }}
-  labels:
-    app: o4-secure-backend
-    network: secure
-    tier: data
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: o4-secure-backend
-  template:
-    metadata:
-      labels:
-        app: o4-secure-backend
-        network: secure
-        tier: data
-    spec:
-      containers:
-        - name: backend
-          image: gcr.io/distroless/python3-debian11:nonroot
-          ports:
-            - containerPort: 8080
-          command: ["python3", "-c"]
-          args:
-            - |
-              import http.server
-              import socketserver
-              import os
-              
-              class SecureHandler(http.server.BaseHTTPRequestHandler):
-                  def do_GET(self):
-                      self.send_response(200)
-                      self.send_header('Content-type', 'text/html')
-                      self.end_headers()
-                      
-                      flag = os.environ.get('FLAG', 'CTF{FLAG_NOT_SET}')
-                      html = f'''
-                      <html>
-                      <head><title>Secure Backend</title></head>
-                      <body>
-                          <h1>🎉 Success!</h1>
-                          <p>You've successfully navigated the network policies!</p>
-                          <p><strong>Flag:</strong> <code>{flag}</code></p>
-                      </body>
-                      </html>
-                      '''
-                      self.wfile.write(html.encode())
-              
-              PORT = 8080
-              with socketserver.TCPServer(("", PORT), SecureHandler) as httpd:
-                  print("Secure backend starting on port 8080")
-                  print("This service is protected by network policies")
-                  httpd.serve_forever()
-          env:
-            - name: FLAG
-              value: {{ .Values.flags.networkSidestep }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            runAsUser: 65532
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-          resources:
-            requests:
-              cpu: "10m"
-              memory: "32Mi"
-            limits:
-              cpu: "100m"
-              memory: "64Mi"
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: o4-secure-backend
-  namespace: {{ $ns }}
-  labels:
-    network: secure
-    tier: data
-spec:
-  selector:
-    app: o4-secure-backend
-  ports:
-    - port: 80
-      targetPort: 8080
-
----
 # --- Player Access Pod -----------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
@@ -578,96 +252,4 @@ spec:
               memory: "16Mi"
             limits:
               cpu: "100m"
-              memory: "64Mi"
-
----
-# --- Network Policy: Block player -> secure backend direct access ---
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: block-direct-backend-access
-  namespace: {{ $ns }}
-spec:
-  podSelector:
-    matchLabels:
-      network: secure
-  policyTypes:
-  - Ingress
-  ingress:
-  # Only allow o4-admin-proxy to access secure backend
-  - from:
-    - podSelector:
-        matchLabels:
-          network: proxy
-    ports:
-    - protocol: TCP
-      port: 8080
-
----
-# --- Network Policy: Restrict o4-internal-api access -------------------
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: restrict-o4-internal-api
-  namespace: {{ $ns }}
-spec:
-  podSelector:
-    matchLabels:
-      network: api
-  policyTypes:
-  - Ingress
-  ingress:
-  # Allow frontend and player to access o4-internal-api
-  - from:
-    - podSelector:
-        matchLabels:
-          network: frontend
-    - podSelector:
-        matchLabels:
-          network: player
-    ports:
-    - protocol: TCP
-      port: 8080
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-frontend-access
-  namespace: {{ $ns }}
-spec:
-  podSelector:
-    matchLabels:
-      network: frontend
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          network: player
-    ports:
-    - protocol: TCP
-      port: 8080
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-proxy-access
-  namespace: {{ $ns }}
-spec:
-  podSelector:
-    matchLabels:
-      network: proxy
-  policyTypes:
-  - Ingress
-  ingress:
-  # Allow player to access o4-admin-proxy
-  - from:
-    - podSelector:
-        matchLabels:
-          network: player
-    ports:
-    - protocol: TCP
-      port: 8080 
+              memory: "64Mi" 
