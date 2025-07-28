@@ -6,8 +6,7 @@ Run this after deploying CTFd to populate it with your challenges.
 Usage:
     python3 setup_ctfd_challenges.py --url http://your-ctfd-url --username admin --password admin
     
-Flags are loaded from Helm deployments. All teams use the same flags:
-    python3 setup_ctfd_challenges.py --url http://your-ctfd-url --username admin --password admin
+Flags are loaded from game/values.yaml and player/values.yaml files.
 """
 
 import requests
@@ -31,41 +30,24 @@ class Challenge(BaseModel):
     flag_key: str = Field(description="Key to look up flag values")
 
 
-# Challenge definitions based on your Kubernetes challenges
+# Challenge definitions based on your 5 Kubernetes challenges
 CHALLENGES = [
     Challenge(
         flag_key="warmup",
         name="Warmup",
         category="Kubernetes Basics", 
-        description="""Welcome to the Kubernetes CTF! Your team has been given access to a Kubernetes cluster.
-
-Start by exploring your namespace and find the deployment that's running.
-Check the logs of the pod to find your first flag.
-
-Commands to get started:
-- `kubectl get pods`
-- `kubectl logs <pod-name>`""",
+        description="""Welcome to the Kubernetes CTF!""",
         value=50,
         hints=[
-            "Look for a deployment called 'warmup'",
-            "Check the container logs for output"
         ]
     ),
     Challenge(
         flag_key="leakySecret",
         name="Leaky Secret",
         category="RBAC & Secrets",
-        description="""There's a secret in your namespace that contains a flag, but you can't read it directly.
-However, you have been granted special permissions to "watch" secrets.
-
-Use kubectl to monitor changes to secrets and capture the flag.
-
-Hint: Check the secret's annotation for guidance.""",
+        description="""There's a secret in your namespace that contains a flag, but you can't read it directly...""",
         value=100,
         hints=[
-            "You can only WATCH secrets, not GET them",
-            "Use `kubectl get secrets` to find the secret name",
-            "Try `kubectl get secret <name> --watch`"
         ]
     ),
     Challenge(
@@ -76,68 +58,29 @@ Hint: Check the secret's annotation for guidance.""",
 Find a way to access a service account token that gives you elevated privileges.""",
         value=150,
         hints=[
-            "Look for service accounts in your namespace",
-            "Service account tokens are mounted in pods"
         ]
     ),
     Challenge(
-        flag_key="netpol101",
-        name="Network Policy Bypass",
+        flag_key="privilegedEscape",
+        name="Privileged Container Escape",
+        category="Container Escape",
+        description="""Break out of your container constraints and access the underlying 
+host system to find the flag.""",
+        value=200,
+        hints=[
+            "Look for privileged containers",
+        ]
+    ),
+    Challenge(
+        flag_key="networkSidestep",
+        name="Network Sidestep",
         category="Network Security",
         description="""Network policies control traffic between pods. Find a way to bypass 
 the network restrictions to reach a protected service.""",
-        value=200,
-        hints=[
-            "Check what network policies exist",
-            "ICMP traffic might be handled differently"
-        ]
-    ),
-    Challenge(
-        flag_key="sillyCSI",
-        name="Host Path Escape",
-        category="Storage & Volumes",
-        description="""A custom CSI driver has been deployed. Investigate how you can 
-abuse it to access the host filesystem.""",
         value=250,
         hints=[
-            "Look for custom storage classes",
-            "CSI drivers can expose host paths"
-        ]
-    ),
-    Challenge(
-        flag_key="trivialJob",
-        name="Controller Compromise",
-        category="Custom Resources",
-        description="""A custom controller has been deployed for TrivialJob resources.
-Find a way to exploit this controller to gain elevated access.""",
-        value=300,
-        hints=[
-            "Custom resources might have CRDs",
-            "Controllers often run with elevated privileges"
-        ]
-    ),
-    Challenge(
-        flag_key="podEscape",
-        name="Kernel Space Access",
-        category="Container Escape",
-        description="""Break out of your container constraints and access the underlying 
-kernel space to find the flag.""",
-        value=400,
-        hints=[
-            "Look for privileged containers",
-            "Host namespaces can provide escape routes"
-        ]
-    ),
-    Challenge(
-        flag_key="escalation",
-        name="Cluster Admin",
-        category="Privilege Escalation",
-        description="""Achieve cluster-admin privileges through any means necessary.
-The ultimate flag awaits those who can take control of the entire cluster.""",
-        value=500,
-        hints=[
-            "Chain together previous vulnerabilities",
-            "Look for service accounts with cluster-wide permissions"
+            "Check what network policies exist",
+            "Look for ways to bridge networks"
         ]
     )
 ]
@@ -243,47 +186,54 @@ class CTFdAPI:
         return challenge_id
 
 
-def load_flags_from_helm(team_name: str = None) -> Dict[str, str]:
-    """Load flag values from any team's Helm deployment (all teams now have identical flags)"""
-    # Try to find any deployed team if none specified
-    if not team_name:
-        try:
-            import subprocess
-            result = subprocess.run(['helm', 'list', '-q'], capture_output=True, text=True)
-            if result.returncode == 0:
-                releases = result.stdout.strip().split('\n')
-                # Look for team releases (exclude game/platform releases)
-                team_releases = [r for r in releases if r.startswith('team-') and r != '']
-                if team_releases:
-                    team_name = team_releases[0]
-                    print(f"Auto-detected team deployment: {team_name}")
-        except Exception:
-            pass
+def load_flags_from_yaml() -> Dict[str, str]:
+    """Load flag values from game/values.yaml and player/values.yaml files"""
+    flags = {}
     
-    if team_name:
+    # Load flags from player/values.yaml
+    player_values_path = Path("player/values.yaml")
+    if player_values_path.exists():
         try:
-            import subprocess
-            result = subprocess.run(['helm', 'get', 'values', team_name, '--all'], 
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                values = yaml.safe_load(result.stdout)
-                flags = values.get('flags', {})
-                if flags:
-                    print(f"Loaded flags from Helm deployment: {team_name}")
-                    return flags
+            with open(player_values_path, 'r') as f:
+                player_values = yaml.safe_load(f)
+                player_flags = player_values.get('flags', {})
+                flags.update(player_flags)
+                print(f"Loaded {len(player_flags)} flags from player/values.yaml")
         except Exception as e:
-            print(f"Warning: Failed to get Helm values for {team_name}: {e}")
+            print(f"Warning: Failed to load player/values.yaml: {e}")
+    else:
+        print("Warning: player/values.yaml not found")
     
-    raise Exception("No Helm deployment found with flags. Please deploy at least one team first.")
+    # Load flags from game/values.yaml
+    game_values_path = Path("game/values.yaml")
+    if game_values_path.exists():
+        try:
+            with open(game_values_path, 'r') as f:
+                game_values = yaml.safe_load(f)
+                game_flags = game_values.get('flags', {})
+                flags.update(game_flags)  # This will override any duplicates with game values
+                print(f"Loaded {len(game_flags)} flags from game/values.yaml")
+        except Exception as e:
+            print(f"Warning: Failed to load game/values.yaml: {e}")
+    else:
+        print("Warning: game/values.yaml not found")
+    
+    if not flags:
+        raise Exception("No flags found in either player/values.yaml or game/values.yaml")
+    
+    print(f"Total flags loaded: {list(flags.keys())}")
+    return flags
 
 
-def setup_challenges(ctfd: CTFdAPI, team_name: Optional[str] = None) -> None:
-    """Set up challenges using flags from Helm deployment"""
+def setup_challenges(ctfd: CTFdAPI) -> None:
+    """Set up challenges using flags from YAML files"""
     print("Setting up CTF challenges...")
-    flags = load_flags_from_helm(team_name)
+    flags = load_flags_from_yaml()
 
     for challenge in CHALLENGES:
         flag_value = flags.get(challenge.flag_key, f"CTF{{{challenge.flag_key.upper()}}}")
+        if challenge.flag_key not in flags:
+            print(f"Warning: Flag '{challenge.flag_key}' not found in YAML files, using default")
         ctfd.create_challenge(challenge, [flag_value])
 
 
@@ -291,18 +241,13 @@ def setup_challenges(ctfd: CTFdAPI, team_name: Optional[str] = None) -> None:
 @click.option('--url', required=True, help='CTFd instance URL (e.g., http://localhost:8000)')
 @click.option('--username', required=True, help='CTFd admin username')
 @click.option('--password', required=True, help='CTFd admin password')
-@click.option('--team', help='Specific team deployment to load flags from (optional - will auto-detect if not provided)')
-def main(url: str, username: str, password: str, team: Optional[str]):
+def main(url: str, username: str, password: str):
     """Create CTFd challenges for the Kubernetes CTF.
     
-    Flags are always loaded from Helm deployments. All teams use the same flags.
+    Flags are loaded from game/values.yaml and player/values.yaml files.
     
     Examples:
-        # Auto-detect team deployment and load flags
         python3 setup_ctfd_challenges.py --url http://localhost:8000 --username admin --password admin
-        
-        # Load flags from specific team deployment
-        python3 setup_ctfd_challenges.py --url http://localhost:8000 --username admin --password admin --team team-alpha
     """
     
     # Initialize CTFd API client
@@ -314,14 +259,15 @@ def main(url: str, username: str, password: str, team: Optional[str]):
 
     # Setup challenges
     try:
-        setup_challenges(ctfd, team)
+        setup_challenges(ctfd)
         print("\nAll challenges created successfully!")
         print(f"Visit {url} to see your challenges")
-        print("\nNote: All teams use the same flags and compete for the same challenges.")
+        print("\nChallenges created:")
+        for challenge in CHALLENGES:
+            print(f"  - {challenge.name} ({challenge.value} points)")
     except Exception as e:
         print(f"Failed to setup challenges: {e}")
-        print("\nMake sure you have deployed at least one team using:")
-        print("helm upgrade --install team-NAME ./player --set playerName=team-NAME --create-namespace")
+        print("\nMake sure the game/values.yaml and player/values.yaml files exist and contain flag definitions.")
         sys.exit(1)
 
 
