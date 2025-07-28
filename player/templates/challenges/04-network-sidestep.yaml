@@ -1,5 +1,69 @@
+# =============================================================================
+# CHALLENGE 04: Network Sidestep
+# =============================================================================
+#
+# OBJECTIVE:
+# Navigate through network policies and service discovery to reach the secure
+# backend service and retrieve the flag.
+#
+# SCENARIO:
+# You have access to a pod (o4-player-box) with a service account that has
+# limited permissions for service discovery. There are multiple services in 
+# the namespace, but network policies restrict direct access to the secure
+# backend containing the flag.
+#
+# HOW TO SOLVE:
+# 1. Start by accessing your player pod:
+#    kubectl exec -it deployment/o4-player-box -- /bin/sh
+#
+# 2. Use your service account token to discover available services:
+#    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+#    NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+#    curl -H "Authorization: Bearer $TOKEN" \
+#         -k https://kubernetes.default.svc.cluster.local/api/v1/namespaces/$NAMESPACE/services
+#
+# 3. List configmaps to find configuration data:
+#    curl -H "Authorization: Bearer $TOKEN" \
+#         -k https://kubernetes.default.svc.cluster.local/api/v1/namespaces/$NAMESPACE/configmaps
+#
+# 4. Retrieve the admin token from the configmap:
+#    curl -H "Authorization: Bearer $TOKEN" \
+#         -k https://kubernetes.default.svc.cluster.local/api/v1/namespaces/$NAMESPACE/configmaps/o4-network-challenge-config
+#
+# 5. Test access to different services and understand the network flow:
+#    - o4-web-frontend: Entry point (accessible)
+#    - o4-internal-api: Middle tier (accessible from player)
+#    - o4-admin-proxy: Gateway requiring authentication
+#    - o4-secure-backend: Contains flag (blocked by network policy)
+#
+# 6. Use the discovered admin token to authenticate with the proxy:
+#    curl -H "X-Admin-Token: <token-from-configmap>" \
+#         http://o4-admin-proxy/
+#
+# 7. The proxy will forward your request to the secure backend, bypassing
+#    the network policy restriction and revealing the flag.
+#
+# KEY CONCEPTS:
+# - Kubernetes RBAC and service accounts
+# - Service discovery using the Kubernetes API
+# - Network policies and ingress rules
+# - Authentication tokens and proxy patterns
+# - Multi-tier application architecture
+#
+# NETWORK POLICY DETAILS:
+# - Direct access to o4-secure-backend is blocked (only o4-admin-proxy allowed)
+# - o4-internal-api only accepts traffic from frontend and player pods
+# - Player pod can access frontend and proxy services
+# - Authentication is required at the proxy level, not network level
+#
+# SECURITY NOTE:
+# - The admin token is NOT visible in pod descriptions or container specs
+# - Players cannot use 'kubectl describe pod' to find the token
+# - The token must be discovered through proper service account API access
+#
+# =============================================================================
 
-{{- $ns := include "player.ns" . -}}
+{{- $ns := include "player.ns" . }}
 
 apiVersion: v1
 kind: ServiceAccount
@@ -7,7 +71,8 @@ metadata:
   name: network-discovery
   namespace: {{ $ns }}
   annotations:
-    hint: "This service account has permissions to discover services and read configuration. Check what permissions are available using the mounted token."
+    hint: "This service account has permissions to discover services and read configuration. 
+          Check what permissions are available using the mounted token."
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -301,7 +366,7 @@ spec:
                   def do_GET(self):
                       # Check for admin token
                       auth_token = self.headers.get('X-Admin-Token')
-                      expected_token = "o4-admin-proxy-secret-2024"
+                      expected_token = os.environ.get('ADMIN_TOKEN', 'undefined')
                       
                       if not auth_token:
                           self.send_response(401)
@@ -310,7 +375,6 @@ spec:
                           response = {
                               "error": "Missing authentication",
                               "required": "X-Admin-Token header",
-                              "hint": "Check configuration files for the token"
                           }
                           self.wfile.write(json.dumps(response, indent=2).encode())
                           return
@@ -346,6 +410,12 @@ spec:
                   print("Admin proxy server starting on port 8080")
                   print("Requires X-Admin-Token header for authentication")
                   httpd.serve_forever()
+          env:
+            - name: ADMIN_TOKEN
+              valueFrom:
+                configMapKeyRef:
+                  name: o4-network-challenge-config
+                  key: admin-token
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

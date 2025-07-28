@@ -5,8 +5,11 @@ metadata:
   namespace: {{ include "player.ns" . }}
 rules:
 - apiGroups: [""]
-  resources: ["pods", "pods/log", "pods/exec"]
-  verbs: ["get", "list", "create"]
+  resources: ["pods/log", "pods/exec"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list"]
 - apiGroups: [""]
   resources: ["secrets", "configmaps"]
   verbs: ["list"]

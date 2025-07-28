@@ -1,4 +1,68 @@
-{{- $ns := include "player.ns" . -}}
+# =============================================================================
+# CHALLENGE 03: Privileged Container Escape
+# =============================================================================
+#
+# OBJECTIVE:
+# Escape from a privileged container to access the simulated "host" filesystem
+# and find the hidden flag.
+#
+# SCENARIO:
+# A container is running with privileged security context, which grants it
+# extensive capabilities similar to running as root on the host. This
+# misconfiguration allows container escape techniques to access host resources.
+# The challenge simulates a host filesystem mounted at /host.
+#
+# HOW TO SOLVE:
+# 1. Access the privileged container:
+#    kubectl exec -it deployment/privileged-victim -- /bin/sh
+#
+# 2. Verify you're in a privileged container:
+#    id
+#    cat /proc/self/status | grep Cap
+#
+# 3. Explore the mounted host filesystem:
+#    ls -la /host
+#
+# 4. Search through typical host system directories:
+#    ls -la /host/var/lib/kubelet/
+#    ls -la /host/etc/kubernetes/
+#    ls -la /host/root/
+#
+# 5. Look for hidden files (files starting with .):
+#    find /host -name ".*" -type f 2>/dev/null
+#
+# 6. Check the kubelet secrets directory for hidden files:
+#    ls -la /host/var/lib/kubelet/secrets/
+#    cat /host/var/lib/kubelet/secrets/.hidden_flag
+#
+# ALTERNATIVE APPROACHES:
+# - Use find to search for files containing "CTF": 
+#   find /host -type f -exec grep -l "CTF" {} \; 2>/dev/null
+# - Search for recently modified files: find /host -type f -mtime -1 2>/dev/null
+# - Look for files with specific patterns: find /host -name "*flag*" 2>/dev/null
+#
+# KEY CONCEPTS:
+# - Privileged containers and security contexts
+# - Container escape techniques
+# - Host filesystem access from containers
+# - Linux capabilities and privileges
+# - File system exploration and enumeration
+#
+# SECURITY LESSON:
+# Privileged containers have almost the same access as processes running
+# directly on the host. They should be avoided unless absolutely necessary
+# and only used with proper security controls and monitoring.
+#
+# COMMON PRIVILEGED CONTAINER RISKS:
+# - Access to host filesystem
+# - Ability to load kernel modules
+# - Access to host devices
+# - Bypassing container isolation
+# - Potential for complete host compromise
+#
+# =============================================================================
+
+{{- $ns := include "player.ns" . }}
 
 # --- Privileged Pod for Container Escape Challenge ---------------
 apiVersion: apps/v1

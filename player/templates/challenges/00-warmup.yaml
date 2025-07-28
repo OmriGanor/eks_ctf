@@ -1,3 +1,39 @@
+# =============================================================================
+# CHALLENGE 00: Warmup
+# =============================================================================
+#
+# OBJECTIVE:
+# Get familiar with basic kubectl commands by retrieving the flag from
+# container logs.
+#
+# SCENARIO:
+# A simple application is running that periodically prints a flag to its
+# standard output. This is an introductory challenge to help players get
+# comfortable with the Kubernetes environment and basic kubectl operations.
+#
+# HOW TO SOLVE:
+# 1. List the deployments in your namespace:
+#    kubectl get deployments
+#
+# 2. Check the logs of the warmup deployment:
+#    kubectl logs deployment/warmup
+#
+# 3. The flag will be visible in the output, as the container prints it
+#    every 30 seconds.
+#
+# ALTERNATIVE APPROACHES:
+# - Follow the logs in real-time: kubectl logs -f deployment/warmup
+# - Get logs from a specific pod: kubectl logs <pod-name>
+# - List pods first: kubectl get pods
+#
+# KEY CONCEPTS:
+# - Basic kubectl commands (get, logs)
+# - Understanding deployments and pods
+# - Container stdout/stderr log collection
+# - Kubernetes resource management
+#
+# =============================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
