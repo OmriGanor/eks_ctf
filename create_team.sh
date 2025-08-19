@@ -39,13 +39,33 @@ aws iam create-role \
     }'
 
 # 2.2  Map that role to an RBAC username inside the cluster
-echo "Creating EKS IAM identity mapping"
-eksctl create iamidentitymapping \
+echo "Creating EKS IAM identity mapping (using alternative method)"
+# Try eksctl first, if it fails, use kubectl to create the mapping manually
+if eksctl create iamidentitymapping \
   --cluster  $CLUSTER \
   --region   $REGION \
   --arn      arn:aws:iam::${ACCOUNT}:role/ctf-${TEAM} \
   --username $TEAM \
-  --group    ctf-players
+  --group    ctf-players 2>/dev/null; then
+    echo "IAM identity mapping created successfully with eksctl"
+else
+    echo "eksctl failed, creating IAM identity mapping manually with kubectl"
+    # Create the ConfigMap for IAM identity mapping manually
+    cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: arn:aws:iam::${ACCOUNT}:role/ctf-${TEAM}
+      username: ${TEAM}
+      groups:
+        - ctf-players
+EOF
+    echo "IAM identity mapping created manually"
+fi
 
 # 2.3  Lightweight IAM **user** that can assume the role
 echo "Creating IAM user: ctf-user-${TEAM}"

@@ -157,7 +157,7 @@ spec:
                       api_status = "Connection Failed"
                       error_detail = ""
                       try:
-                          with urllib.request.urlopen('http://o4-internal-api:80/status', timeout=2) as response:
+                          with urllib.request.urlopen('http://o4-internal-api.ctfd.svc.cluster.local:80/status', timeout=2) as response:
                               api_status = "Connected"
                       except Exception as e:
                           error_detail = f"Error: {str(e)}"
